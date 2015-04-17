@@ -58,6 +58,8 @@ public class DatabaseUtil implements DataSourceProviderInterface {
     }
   }
 
+  private static final DataSourceProviderInterface instance = new DatabaseUtil();
+
   private static Map<String, DataSource> FoundDS = Collections.synchronizedMap( new HashMap<String, DataSource>() );
 
   /**
@@ -127,4 +129,8 @@ public class DatabaseUtil implements DataSourceProviderInterface {
     }
     throw new NamingException( BaseMessages.getString( PKG, "DatabaseUtil.DSNotFound", dsName ) );
   }
+
+  public static DataSourceProviderInterface getInstance() {
+    return instance;
+   }
 }

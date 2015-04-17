@@ -39,7 +39,7 @@ public class DataSourceProviderFactory {
     //
     // Sets the default provider to DatabaseUtil.
     //
-    DataSourceProviderFactory.setDataSourceProviderInterface( new DatabaseUtil() );
+    DataSourceProviderFactory.setDataSourceProviderInterface( DatabaseUtil.getInstance() );
   }
 
   private DataSourceProviderFactory() {

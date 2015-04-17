@@ -66,6 +66,7 @@ import org.pentaho.di.core.Result;
 import org.pentaho.di.core.RowMetaAndData;
 import org.pentaho.di.core.database.map.DatabaseConnectionMap;
 import org.pentaho.di.core.database.util.DatabaseLogExceptionFactory;
+import org.pentaho.di.core.database.util.DatabaseUtil;
 import org.pentaho.di.core.encryption.Encr;
 import org.pentaho.di.core.exception.KettleDatabaseBatchException;
 import org.pentaho.di.core.exception.KettleDatabaseException;
@@ -396,6 +397,9 @@ public class Database implements VariableSpace, LoggingObjectInterface {
         } catch ( Exception e ) {
           throw new KettleDatabaseException( "Error occurred while trying to connect to the database", e );
         }
+      } else if ( databaseMeta.getAccessType() == DatabaseMeta.TYPE_ACCESS_JNDI ) {
+        final String jndiName = environmentSubstitute( databaseMeta.getDatabaseName() );
+        connectUsingJNDIDataSource( jndiName );
       } else {
         connectUsingClass( databaseMeta.getDriverClass(), partitionId );
         if ( log.isDetailed() ) {
@@ -419,28 +423,49 @@ public class Database implements VariableSpace, LoggingObjectInterface {
   }
 
   /**
-   * Initialize by getting the connection from a javax.sql.DataSource. This method uses the DataSourceProviderFactory to
-   * get the provider of DataSource objects.
-   *
-   * @param dataSourceName
+   * Initialize by getting the connection from a javax.sql.DataSource.
+   * 
+   * This method now _does_not_use the DataSourceProviderFactory to get the provider of DataSource objects.
+   * 
+   * @param jndiName
    * @throws KettleDatabaseException
    */
-  private void initWithNamedDataSource( String dataSourceName ) throws KettleDatabaseException {
-    connection = null;
-    DataSource dataSource =
-      DataSourceProviderFactory.getDataSourceProviderInterface().getNamedDataSource( dataSourceName );
+  private void connectUsingJNDIDataSource( String jndiName ) throws KettleDatabaseException {
+    Connection connection = null;
+    DataSource dataSource = getNamedDataSource( jndiName, null );
     if ( dataSource != null ) {
       try {
         connection = dataSource.getConnection();
       } catch ( SQLException e ) {
-        throw new KettleDatabaseException( "Invalid JNDI connection " + dataSourceName + " : " + e.getMessage() );
+        throw new KettleDatabaseException( "Invalid JNDI connection " + jndiName + " : " + e.getMessage() );
       }
       if ( connection == null ) {
-        throw new KettleDatabaseException( "Invalid JNDI connection " + dataSourceName );
+        throw new KettleDatabaseException( "Invalid JNDI connection " + jndiName );
       }
     } else {
-      throw new KettleDatabaseException( "Invalid JNDI connection " + dataSourceName );
+      throw new KettleDatabaseException( "Invalid JNDI connection " + jndiName );
     }
+    this.connection = connection;
+  }
+
+  /**
+   * This method tries to get datasource by jndiName is specified.
+   * 
+   * Then uses the DataSourceProviderFactory to get the provider of DataSource objects and get DS by dataSourceName.
+   */
+  private static DataSource getNamedDataSource( String jndiName, String dataSourceName ) throws KettleDatabaseException {
+    DataSource resultDataSource = null;
+    final DataSourceProviderInterface dsProvider1 = DatabaseUtil.getInstance();
+    if ( jndiName != null && dsProvider1 != null ) {
+      resultDataSource = dsProvider1.getNamedDataSource( jndiName );
+    }
+    if ( resultDataSource == null && dataSourceName != null ) {
+      final DataSourceProviderInterface dsProvider2 = DataSourceProviderFactory.getDataSourceProviderInterface();
+      if ( dsProvider2 != null && dsProvider2 != dsProvider1 ) {
+        resultDataSource = dsProvider2.getNamedDataSource( dataSourceName );
+      }
+    }
+    return resultDataSource;
   }
 
   /**
@@ -450,12 +475,6 @@ public class Database implements VariableSpace, LoggingObjectInterface {
    * @return true if the connect was successful, false if something went wrong.
    */
   private void connectUsingClass( String classname, String partitionId ) throws KettleDatabaseException {
-    // first see if this is a JNDI connection
-    if ( databaseMeta.getAccessType() == DatabaseMeta.TYPE_ACCESS_JNDI ) {
-      initWithNamedDataSource( environmentSubstitute( databaseMeta.getDatabaseName() ) );
-      return;
-    }
-
     // Install and load the jdbc Driver
     PluginInterface plugin =
       PluginRegistry.getInstance().getPlugin( DatabasePluginType.class, databaseMeta.getDatabaseInterface() );
@@ -486,10 +505,10 @@ public class Database implements VariableSpace, LoggingObjectInterface {
       }
     } catch ( NoClassDefFoundError e ) {
       throw new KettleDatabaseException( BaseMessages.getString( PKG,
-        "Database.Exception.UnableToFindClassMissingDriver", databaseMeta.getDriverClass(), plugin.getName() ), e );
+          "Database.Exception.UnableToFindClassMissingDriver", classname, plugin.getName() ), e );
     } catch ( ClassNotFoundException e ) {
       throw new KettleDatabaseException( BaseMessages.getString( PKG,
-        "Database.Exception.UnableToFindClassMissingDriver", databaseMeta.getDriverClass(), plugin.getName() ), e );
+          "Database.Exception.UnableToFindClassMissingDriver", classname, plugin.getName() ), e );
     } catch ( Exception e ) {
       throw new KettleDatabaseException( "Exception while loading class", e );
     }
